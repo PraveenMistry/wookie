@@ -24,7 +24,7 @@ module.exports = {
                     res.status(403).json({status:"failed",error:"Unauthorized access"})
                 }
              } catch(err) {
-                console.log(error("Auth token not valid ->" )+req); 
+                console.log("AUTH error",err); 
                 res.status(403).json({status:"failed",error:"Unauthorized access"})
             }
          }else{
