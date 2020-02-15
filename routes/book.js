@@ -11,7 +11,7 @@ router.get('/books/own/publish', authMiddlerware.auth, bookController.getOwnPubl
 router.get('/books/own/unpublished', authMiddlerware.auth, bookController.getOwnUnpublishedBooks);
 
 // POST API`s
-router.post('/book/publish', authMiddlerware.auth, bookController.publishBook);
+router.post('/publish', authMiddlerware.auth, bookController.publishBook);
 router.put('/book/unpublish', authMiddlerware.auth,  bookController.unpublishBook);
 router.put('/book/republish', authMiddlerware.auth, bookController.republishBook);
 module.exports = router;
