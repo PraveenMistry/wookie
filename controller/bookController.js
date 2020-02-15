@@ -9,14 +9,19 @@ client.on('error', (err) => {
     console.log("Error " + err)
 });
 
+const booksRedisKey = 'books';
+const ownUnpublishBookKey = 'ownUnpublishBook';
+const publishBooksKey = 'publishBooks';
+const ownPublishBookKey = 'ownPublishBook';
+
 module.exports = {
     getBooks: function (req, res) {
         // key to store results in Redis store
-        const booksRedisKey = 'books';
+        
         return client.get(booksRedisKey, (err, booksResult) => {
             // If that key exists in Redis store
             if (booksResult) {
-                return res.json({ status: 'success', messgae:'From Cache' ,data: JSON.parse(booksResult) })
+                return res.json({ status: 'success', messgae:'From Cache' ,books: JSON.parse(booksResult) })
             }else{
                 books.findAll()
                 .then(booksResult => {
@@ -39,7 +44,7 @@ module.exports = {
         return client.get(searchBookKey, (err, bookResult) => {
             // If that key exists in Redis store
             if (bookResult) {
-                return res.json({ status: 'success', messgae:'From Cache' ,data: JSON.parse(bookResult) })
+                return res.json({ status: 'success', messgae:'From Cache' ,book: JSON.parse(bookResult) })
             }else{
                 books.findAll({
                     where: {
@@ -59,11 +64,11 @@ module.exports = {
         })
     },
     getPublishedBooks: function(req,res){
-        const publishBooksKey = 'publishBooks';
+        
         return client.get(publishBooksKey, (err, booksResult) => {
             // If that key exists in Redis store
             if (booksResult) {
-                return res.json({ status: 'success', messgae:'From Cache' ,data: JSON.parse(booksResult) })
+                return res.json({ status: 'success', messgae:'From Cache' ,books: JSON.parse(booksResult) })
             }else{
                 books.findAll({
                     where: {
@@ -82,11 +87,11 @@ module.exports = {
         });
     },
     getOwnPublishedBooks: function(req,res){
-        const ownPublishBookKey = 'ownPublishBook';
+        
         return client.get(ownPublishBookKey, (err, booksResult) => {
             // If that key exists in Redis store
             if (booksResult) {
-                return res.json({ status: 'success', messgae:'From Cache' ,data: JSON.parse(booksResult) })
+                return res.json({ status: 'success', messgae:'From Cache' ,books: JSON.parse(booksResult) })
             }else{
                 books.findAll({
                     where: {
@@ -106,11 +111,11 @@ module.exports = {
         })
     },
     getOwnUnpublishedBooks: function(req,res){
-        const ownUnpublishBookKey = 'ownUnpublishBook';
+        
         return client.get(ownUnpublishBookKey, (err, booksResult) => {
             // If that key exists in Redis store
             if (booksResult) {
-                return res.json({ status: 'success', messgae:'From Cache' ,data: JSON.parse(booksResult) })
+                return res.json({ status: 'success', messgae:'From Cache' ,books: JSON.parse(booksResult) })
             }else{ 
                 books.findAll({
                     where: {
@@ -120,7 +125,7 @@ module.exports = {
                 })
                 .then(books => {
                     client.setex(ownUnpublishBookKey, cacheTime, JSON.stringify(booksResult))
-                    res.status(200).json({status:'success', messgae:'',books:books});
+                    res.status(200).json({status:'success', messgae:'',books:booksResult});
                 })
                 .catch(err => {
                     console.log("error while get",err)
@@ -149,7 +154,6 @@ module.exports = {
         if(price === ""){
             price = 0;
         }
-
         let payload = {
             "title":title,
             "description":description,
@@ -162,6 +166,9 @@ module.exports = {
 
         books.create(payload)
         .then(data => {
+            client.del(booksRedisKey, (err, del) => {
+                console.log("booksRedisKey del",del)
+            });
             res.status(200).json({status:'success', messgae:'Book publish successfully',data:data});
         })
         .catch(err => {
@@ -176,34 +183,96 @@ module.exports = {
             res.status(500).json({status:'failed', messgae:'Missing parameters',payload:{"title":"title"}});
         }
 
-        books.update(
-            { is_published: isPublished },
-            { where: { title: title,"user_id":req.userId } }
-          )
-            .then(() => {
-              res.status(200).json({status:'success', messgae:'Book unpublish successfully'});
-            })
-            .catch(err => {
-            console.log("error post",err)
-            res.status(500).json({status:'failed', messgae:'Something wrong',error:err});
+        books.findOne({
+            where: {
+                user_id: req.userId,
+                title: title
+            }
+          })
+        .then(anyBook => {
+            if (anyBook) {
+                console.log("unpublishBook")
+                books.update(
+                    { is_published: isPublished },
+                    { where: { title: title,"user_id":req.userId } }
+                )
+                    .then(() => {
+                        client.del(booksRedisKey, (err, del) => {
+                            console.log("booksRedisKey del",del)
+                        });
+                        client.del(publishBooksKey, (err, del) => {
+                            console.log("publishBooksKey del",del)
+                        });
+                        client.del(ownUnpublishBookKey, (err, del) => {
+                            console.log("ownUnpublishBookKey del",del)
+                        });
+                        client.del(ownPublishBookKey, (err, del) => {
+                            console.log("ownPublishBookKey del",del)
+                        });
+                        res.status(200).json({status:'success', messgae:'Book unpublish successfully'});
+                    })
+                    .catch(err => {
+                    console.log("error post",err)
+                    res.status(500).json({status:'failed', messgae:'Something wrong',error:err});
+                })
+            } else {
+                res.status(200).json({status:'success',message:'This user '+req.username+' does not have book with title: '+title});
+            }
         })
+        .catch(err => {
+            res.status(500).json({status:'failed',error:err})
+        })  
     },
     republishBook: function(req,res){
         let title        = req.body.title;
         let isPublished  = 1;
+        
+        if(req.username.toLowerCase() === 'thanos'){
+            res.status(403).json({status:"failed",error:"Security issue",messgae:"Thanos not able to publish - republish book"})
+        }
+        
         if(!title || title.trim() ===''){
             res.status(500).json({status:'failed', messgae:'Missing parameters',payload:{"title":"title"}});
         }
-        books.update(
-            { is_published: isPublished },
-            { where: { title: title,"user_id":req.userId } }
-          )
-            .then(() => {
-              res.status(200).json({status:'success', messgae:'Book republish successfully'});
-            })
-            .catch(err => {
-            console.log("error post",err)
-            res.status(500).json({status:'failed', messgae:'Something wrong',error:err});
+
+        books.findOne({
+            where: {
+                user_id: req.userId,
+                title: title
+            }
+          })
+        .then(anyBook => {
+            if (anyBook) {
+                console.log("republishBook")
+                books.update(
+                    { is_published: isPublished },
+                    { where: { title: title,"user_id":req.userId } }
+                  )
+                .then(() => {
+                    client.del(booksRedisKey, (err, del) => {
+                        console.log("booksRedisKey del",del)
+                    });
+                    client.del(publishBooksKey, (err, del) => {
+                        console.log("publishBooksKey del",del)
+                    });
+                    client.del(ownUnpublishBookKey, (err, del) => {
+                        console.log("ownUnpublishBookKey del",del)
+                    });
+                    client.del(ownPublishBookKey, (err, del) => {
+                        console.log("ownPublishBookKey del",del)
+                    });
+                    res.status(200).json({status:'success', messgae:'Book republish successfully'});
+                })
+                .catch(err => {
+                    console.log("error post",err)
+                    res.status(500).json({status:'failed', messgae:'Something wrong',error:err});
+                })
+            } else {
+                res.status(200).json({status:'success',message:'This user '+req.username+' does not have book with title: '+title});
+            }
         })
+        .catch(err => {
+            res.status(500).json({status:'failed',error:err})
+        }) 
     }
 };
